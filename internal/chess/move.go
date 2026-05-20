@@ -88,3 +88,7 @@ func promoToChar(promo int) byte {
         return 0
     }
 }
+
+func PromoToChar(promo int) byte {
+    return promoToChar(promo)
+}

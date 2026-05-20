@@ -90,7 +90,7 @@ func (u *UCI) handlePosition(args []string) {
     if idx < len(args) && args[idx] == "moves" {
         idx++
         for idx < len(args) {
-            m, ok := parseUCIMove(u.eng.Pos, args[idx])
+            m, ok := chess.ParseUCIMove(u.eng.Pos, args[idx])
             if ok {
                 u.eng.Pos.MakeMove(m)
             }
@@ -168,7 +168,7 @@ func (u *UCI) handleGo(args []string) {
         u.write("bestmove 0000")
         return
     }
-    u.write(fmt.Sprintf("bestmove %s", moveToUCI(best)))
+    u.write(fmt.Sprintf("bestmove %s", chess.MoveToUCI(best)))
     _ = info
 }
 
@@ -189,75 +189,10 @@ func infoLine(info engine.SearchInfo) string {
         sb.WriteString(" pv")
         for _, m := range info.PV {
             sb.WriteByte(' ')
-            sb.WriteString(moveToUCI(m))
+            sb.WriteString(chess.MoveToUCI(m))
         }
     }
     return sb.String()
-}
-
-func parseUCIMove(pos *chess.Position, text string) (chess.Move, bool) {
-    if len(text) < 4 {
-        return chess.NoMove, false
-    }
-    from, ok := chess.SquareFromString(text[0:2])
-    if !ok {
-        return chess.NoMove, false
-    }
-    to, ok := chess.SquareFromString(text[2:4])
-    if !ok {
-        return chess.NoMove, false
-    }
-    promo := chess.PromoNone
-    if len(text) >= 5 {
-        switch text[4] {
-        case 'n':
-            promo = chess.PromoKnight
-        case 'b':
-            promo = chess.PromoBishop
-        case 'r':
-            promo = chess.PromoRook
-        case 'q':
-            promo = chess.PromoQueen
-        }
-    }
-    moves := pos.GenerateMoves().Moves
-    for _, m := range moves {
-        if m.From() == from && m.To() == to {
-            if promo == chess.PromoNone || m.Promo() == promo {
-                undo, ok := pos.MakeMove(m)
-                if !ok {
-                    continue
-                }
-                pos.UnmakeMove(undo)
-                return m, true
-            }
-        }
-    }
-    return chess.NoMove, false
-}
-
-func moveToUCI(m chess.Move) string {
-    from := chess.SquareToString(m.From())
-    to := chess.SquareToString(m.To())
-    if m.IsPromotion() {
-        return from + to + string([]byte{promoToChar(m.Promo())})
-    }
-    return from + to
-}
-
-func promoToChar(promo int) byte {
-    switch promo {
-    case chess.PromoKnight:
-        return 'n'
-    case chess.PromoBishop:
-        return 'b'
-    case chess.PromoRook:
-        return 'r'
-    case chess.PromoQueen:
-        return 'q'
-    default:
-        return 0
-    }
 }
 
 func (u *UCI) write(line string) {
