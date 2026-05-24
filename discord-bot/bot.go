@@ -146,6 +146,7 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 
 	switch data.CommandName() {
 	case "play":
+		_ = event.DeferCreateMessage(false)
 		color := data.String("color")
 		thinkMs := data.Int("think_ms")
 		if thinkMs == 0 {
@@ -162,6 +163,7 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 		}
 		returnGameState(event, state, "Game started")
 	case "move":
+		_ = event.DeferCreateMessage(false)
 		state := getGame(channelID)
 		if state == nil || state.PlayerID != userID {
 			replyError(event, errors.New("no active game in this channel"))
@@ -295,10 +297,8 @@ func returnGameState(event *events.ApplicationCommandInteractionCreate, state *g
 		turnText = "-"
 	}
 	content := fmt.Sprintf("%s. Turn: %s", title, turnText)
-	_ = event.CreateMessage(discord.NewMessageCreate().
-		WithContent(content).
-		WithFiles(attachment),
-	)
+
+	replyFollowup(event, content, attachment)
 }
 
 func replyError(event *events.ApplicationCommandInteractionCreate, err error) {
@@ -308,10 +308,14 @@ func replyError(event *events.ApplicationCommandInteractionCreate, err error) {
 	)
 }
 
-func replySimple(event *events.ApplicationCommandInteractionCreate, msg string) {
+func replySimple(event *events.ApplicationCommandInteractionCreate, msg string, files ...*discord.File) {
 	_ = event.CreateMessage(discord.NewMessageCreate().
-		WithContent(msg),
+		WithContent(msg).WithFiles(files...),
 	)
+}
+
+func replyFollowup(event *events.ApplicationCommandInteractionCreate, msg string, files ...*discord.File) {
+	_, _=event.Client().Rest.CreateFollowupMessage(event.ApplicationID(), event.Token(), discord.NewMessageCreate().WithContent(msg).WithFiles(files...))
 }
 
 func sideToString(side int) string {
