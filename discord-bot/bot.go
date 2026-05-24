@@ -175,10 +175,12 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 			return
 		}
 		move, ok := chess.ParseUCIMove(state.Pos, moveString)
-
+		if !ok {
+			move, ok = chess.ParseSANMove(state.Pos, moveString)
+		}
 		if !ok {
 			state.Mutex.Unlock()
-			replyError(event, errors.New("invalid move"))
+			replyError(event, errors.New("invalid move (use UCI or SAN)"))
 			return
 		}
 		if _, ok := state.Pos.MakeMove(move); !ok {
