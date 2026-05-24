@@ -58,6 +58,8 @@ func (u *UCI) handle(line string) {
         u.write("readyok")
     case "ucinewgame":
         u.eng.Pos.LoadFEN(chess.StartFEN)
+    case "d":
+        u.write(fmt.Sprintf("Fen: %s", u.eng.Pos.FEN()))
     case "position":
         u.handlePosition(fields[1:])
     case "go":
