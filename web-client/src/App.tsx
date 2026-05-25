@@ -3,7 +3,7 @@ import { Chess } from "chess.js";
 import Board from "./components/Board";
 import type { ServerMessage } from "./types";
 
-const DEFAULT_ENGINE = "../main";
+const DEFAULT_ENGINE = "../tmp/engine";
 
 export default function App() {
   const [chess, setChess] = useState(() => new Chess());

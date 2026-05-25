@@ -14,7 +14,7 @@ type ServerMessage =
   | { type: "engineMove"; uci: string }
   | { type: "error"; message: string };
 
-const enginePathDefault = process.env.CHASS_ENGINE ?? "../main";
+const enginePathDefault = process.env.CHASS_ENGINE ?? "../tmp/engine";
 const thinkTimeMsDefault = Number(process.env.CHASS_THINK_MS ?? "1000");
 
 const wss = new WebSocketServer({ port: 5174 });
