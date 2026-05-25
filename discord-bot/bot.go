@@ -24,6 +24,7 @@ import (
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/snowflake/v2"
 	"github.com/joho/godotenv"
 	"github.com/srwiley/oksvg"
 	"github.com/srwiley/rasterx"
@@ -83,6 +84,7 @@ type gameState struct {
 	HumanColor int
 	ThinkTime  time.Duration
 	Mutex      sync.Mutex
+	MessageID  snowflake.ID
 }
 
 var (
@@ -166,14 +168,14 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 		_ = event.DeferCreateMessage(false)
 		state := getGame(channelID)
 		if state == nil || state.PlayerID != userID {
-			replyError(event, errors.New("no active game in this channel"))
+			followupError(event, errors.New("no active game in this channel"))
 			return
 		}
 		moveString := data.String("move")
 		state.Mutex.Lock()
 		if state.Pos.SideToMove != state.HumanColor {
 			state.Mutex.Unlock()
-			replyError(event, errors.New("not your turn"))
+			followupError(event, errors.New("not your turn"))
 			return
 		}
 		move, ok := chess.ParseUCIMove(state.Pos, moveString)
@@ -182,12 +184,12 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 		}
 		if !ok {
 			state.Mutex.Unlock()
-			replyError(event, errors.New("invalid move (use UCI or SAN)"))
+			followupError(event, errors.New("invalid move (use UCI or SAN)"))
 			return
 		}
 		if _, ok := state.Pos.MakeMove(move); !ok {
 			state.Mutex.Unlock()
-			replyError(event, errors.New("illegal move"))
+			followupError(event, errors.New("illegal move"))
 			return
 		}
 		if msg, done := gameStatus(state); done {
@@ -198,7 +200,7 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 		}
 		if err := engineMoveLocked(state); err != nil {
 			state.Mutex.Unlock()
-			replyError(event, err)
+			followupError(event, err)
 			return
 		}
 		if msg, done := gameStatus(state); done {
@@ -298,7 +300,7 @@ func returnGameState(event *events.ApplicationCommandInteractionCreate, state *g
 	}
 	content := fmt.Sprintf("%s. Turn: %s", title, turnText)
 
-	replyFollowup(event, content, attachment)
+	replyFollowup(event, state, content, attachment)
 }
 
 func replyError(event *events.ApplicationCommandInteractionCreate, err error) {
@@ -314,8 +316,30 @@ func replySimple(event *events.ApplicationCommandInteractionCreate, msg string, 
 	)
 }
 
-func replyFollowup(event *events.ApplicationCommandInteractionCreate, msg string, files ...*discord.File) {
-	_, _=event.Client().Rest.CreateFollowupMessage(event.ApplicationID(), event.Token(), discord.NewMessageCreate().WithContent(msg).WithFiles(files...))
+func replyFollowup(event *events.ApplicationCommandInteractionCreate, gameState *gameState, msg string, files ...*discord.File) {
+	if gameState.MessageID == 0 {
+		m, err := event.Client().Rest.CreateFollowupMessage(event.ApplicationID(), event.Token(), discord.NewMessageCreate().WithContent(msg).WithFiles(files...))
+		if err != nil {
+			slog.Error(err.Error())
+			return
+		}
+		gameState.MessageID = m.ID
+	} else {
+		//_, err := event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent(msg).WithFiles(files...))
+		_, err := event.Client().Rest.UpdateFollowupMessage(event.ApplicationID(), event.Token(), gameState.MessageID, discord.NewMessageUpdate().WithContent(msg).WithFiles(files...))
+		if err != nil {
+			slog.Error(err.Error())
+			return
+		}
+		err = event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
+		if err != nil {
+			slog.Error(err.Error())
+		}
+	}
+}
+
+func followupError(event *events.ApplicationCommandInteractionCreate, err error) {
+	_, _ = event.Client().Rest.CreateFollowupMessage(event.ApplicationID(), event.Token(), discord.NewMessageCreate().WithContent("Error: "+err.Error()).WithEphemeral(true))
 }
 
 func sideToString(side int) string {
