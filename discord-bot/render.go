@@ -17,7 +17,7 @@ import (
 	"github.com/theAnuragMishra/chass/internal/chess"
 )
 
-func renderBoard(pos *chess.Position) ([]byte, error) {
+func renderBoard(pos *chess.Position, orientation int) ([]byte, error) {
 	assets, err := loadPieceAssets()
 	if err != nil {
 		return nil, err
@@ -33,8 +33,15 @@ func renderBoard(pos *chess.Position) ([]byte, error) {
 
 	for rank := 7; rank >= 0; rank-- {
 		for file := 0; file < 8; file++ {
-			x := boardBorderSize + file*boardSquareSize
-			y := boardBorderSize + (7-rank)*boardSquareSize
+			var x int
+			var y int
+			if orientation == 1 {
+				x = boardBorderSize + (7-file)*boardSquareSize
+				y = boardBorderSize + rank*boardSquareSize
+			} else {
+				x = boardBorderSize + file*boardSquareSize
+				y = boardBorderSize + (7-rank)*boardSquareSize
+			}
 			sqRect := image.Rect(x, y, x+boardSquareSize, y+boardSquareSize)
 			isLight := (file+rank)%2 != 0
 			if isLight {
@@ -62,7 +69,7 @@ func renderBoard(pos *chess.Position) ([]byte, error) {
 		}
 	}
 
-	drawCoordinates(img)
+	drawCoordinates(img, orientation)
 
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
@@ -71,18 +78,22 @@ func renderBoard(pos *chess.Position) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func drawCoordinates(img *image.RGBA) {
+func drawCoordinates(img *image.RGBA, orientation int) {
 	files := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
 	ranks := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
 	textColor := colorFromHex("#EDE8DB")
 	for i := 0; i < 8; i++ {
+		idx := i
+		if orientation == 1 {
+			idx = 7 - i
+		}
 		x := boardBorderSize + i*boardSquareSize + boardSquareSize/2
 		y := boardBorderSize + 8*boardSquareSize + boardBorderSize/2
-		drawLabel(img, files[i], x, y, textColor)
+		drawLabel(img, files[idx], x, y, textColor)
 		x2 := boardBorderSize / 2
 		yRank := boardBorderSize + (7-i)*boardSquareSize + boardSquareSize/2
-		drawLabel(img, ranks[i], x2, yRank, textColor)
-		drawLabel(img, ranks[i], boardBorderSize+8*boardSquareSize+boardBorderSize/2, yRank, textColor)
+		drawLabel(img, ranks[idx], x2, yRank, textColor)
+		drawLabel(img, ranks[idx], boardBorderSize+8*boardSquareSize+boardBorderSize/2, yRank, textColor)
 	}
 }
 

@@ -281,7 +281,7 @@ func clearGame(channelID string) {
 }
 
 func returnGameState(event *events.ApplicationCommandInteractionCreate, state *gameState, title string) {
-	img, err := renderBoard(state.Pos)
+	img, err := renderBoard(state.Pos, state.HumanColor)
 	if err != nil {
 		replyError(event, err)
 		return
