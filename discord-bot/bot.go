@@ -200,6 +200,7 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 		}
 		if err := engineMoveLocked(state); err != nil {
 			state.Mutex.Unlock()
+			slog.Error(err.Error())
 			followupError(event, err)
 			return
 		}
@@ -264,7 +265,7 @@ func engineMoveLocked(state *gameState) error {
 		return errors.New("engine has no legal moves")
 	}
 	if _, ok := state.Pos.MakeMove(move); !ok {
-		return errors.New("engine produced illegal move")
+		return errors.New("engine produced illegal move: " + move.UCI())
 	}
 	return nil
 }
