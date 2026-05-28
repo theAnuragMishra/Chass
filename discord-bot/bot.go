@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"image"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -89,19 +88,10 @@ var (
 	games   = map[string]*gameState{}
 )
 
-type assetCache struct {
-	pieces map[chess.Piece]image.Image
-	mu     sync.Mutex
-}
-
-var cachedAssets assetCache
-
-const (
-	boardSquareSize = 96
-	boardBorderSize = 16
-)
-
 func main() {
+
+	MustInitPieceAssets()
+
 	slog.Info("starting discord chess bot...")
 	slog.Info("disgo version", slog.String("version", disgo.Version))
 	if err := godotenv.Load(); err != nil {

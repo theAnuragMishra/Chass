@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/draw"
@@ -15,6 +16,13 @@ import (
 	"github.com/srwiley/oksvg"
 	"github.com/srwiley/rasterx"
 	"github.com/theAnuragMishra/chass/internal/chess"
+)
+
+var piecesCache map[chess.Piece]image.Image
+
+const (
+	boardSquareSize = 96
+	boardBorderSize = 16
 )
 
 func renderBoard(pos *chess.Position, orientation int) ([]byte, error) {
@@ -250,12 +258,7 @@ func tinyFont() map[rune][]string {
 	}
 }
 
-func loadPieceAssets() (map[chess.Piece]image.Image, error) {
-	cachedAssets.mu.Lock()
-	defer cachedAssets.mu.Unlock()
-	if cachedAssets.pieces != nil {
-		return cachedAssets.pieces, nil
-	}
+func loadPiecesFromDisk() (map[chess.Piece]image.Image, error) {
 	root := projectRoot()
 	assetDir := filepath.Join(root, "assets")
 	lookup := map[chess.Piece]string{
@@ -281,8 +284,22 @@ func loadPieceAssets() (map[chess.Piece]image.Image, error) {
 		}
 		pieces[piece] = img
 	}
-	cachedAssets.pieces = pieces
 	return pieces, nil
+}
+
+func loadPieceAssets() (map[chess.Piece]image.Image, error) {
+	if piecesCache == nil {
+		return nil, errors.New("piece assets not initialized")
+	}
+	return piecesCache, nil
+}
+
+func MustInitPieceAssets() {
+	var err error
+	piecesCache, err = loadPiecesFromDisk()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func decodePNGorSVG(path string) (image.Image, error) {
