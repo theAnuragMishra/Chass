@@ -66,17 +66,22 @@ var commands = []discord.ApplicationCommandCreate{
 		Name:        "draw",
 		Description: "Offer a draw (engine will always accept)",
 	},
+	discord.SlashCommandCreate{
+		Name:        "flip",
+		Description: "Flip the board view",
+	},
 }
 
 type gameState struct {
-	Pos        *chess.Position
-	Engine     *engine.Engine
-	PlayerID   string
-	ChannelID  string
-	HumanColor int
-	ThinkTime  time.Duration
-	Mutex      sync.Mutex
-	MessageID  snowflake.ID
+	Pos         *chess.Position
+	Engine      *engine.Engine
+	PlayerID    string
+	ChannelID   string
+	HumanColor  int
+	ThinkTime   time.Duration
+	Mutex       sync.Mutex
+	MessageID   snowflake.ID
+	orientation int
 }
 
 var (
@@ -220,6 +225,17 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 		}
 		clearGame(channelID)
 		replySimple(event, "Draw accepted. Game over.")
+	case "flip":
+		_ = event.DeferCreateMessage(false)
+		state := getGame(channelID)
+		if state == nil || state.PlayerID != userID {
+			replyError(event, errors.New("no active game in this channel"))
+			return
+		}
+		state.Mutex.Lock()
+		state.orientation ^= 1
+		state.Mutex.Unlock()
+		returnGameState(event, state, "Your move")
 	}
 }
 
@@ -232,12 +248,13 @@ func newGameState(playerID, channelID, color string, think time.Duration) *gameS
 		humanColor = chess.Black
 	}
 	return &gameState{
-		Pos:        pos,
-		Engine:     eng,
-		PlayerID:   playerID,
-		ChannelID:  channelID,
-		HumanColor: humanColor,
-		ThinkTime:  think,
+		Pos:         pos,
+		Engine:      eng,
+		PlayerID:    playerID,
+		ChannelID:   channelID,
+		HumanColor:  humanColor,
+		ThinkTime:   think,
+		orientation: humanColor,
 	}
 }
 
@@ -281,7 +298,7 @@ func clearGame(channelID string) {
 }
 
 func returnGameState(event *events.ApplicationCommandInteractionCreate, state *gameState, title string) {
-	img, err := renderBoard(state.Pos, state.HumanColor)
+	img, err := renderBoard(state.Pos, state.orientation)
 	if err != nil {
 		replyError(event, err)
 		return
