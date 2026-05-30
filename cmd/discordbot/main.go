@@ -10,11 +10,11 @@ import (
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/joho/godotenv"
+	"github.com/theAnuragMishra/chass/discordbot"
 )
 
-
 func main() {
-	MustInitPieceAssets()
+	discordbot.MustInitPieceAssets()
 
 	slog.Info("starting discord chess bot...")
 	slog.Info("disgo version", slog.String("version", disgo.Version))
@@ -29,7 +29,7 @@ func main() {
 
 	client, err := disgo.New(token,
 		bot.WithDefaultGateway(),
-		bot.WithEventListenerFunc(commandListener),
+		bot.WithEventListenerFunc(discordbot.CommandListener),
 	)
 	if err != nil {
 		slog.Error("error while building disgo instance", slog.Any("err", err))
@@ -38,7 +38,7 @@ func main() {
 
 	defer client.Close(context.TODO())
 
-	if _, err = client.Rest.SetGlobalCommands(client.ApplicationID, commands); err != nil {
+	if _, err = client.Rest.SetGlobalCommands(client.ApplicationID, discordbot.Commands); err != nil {
 		slog.Error("error while registering commands", slog.Any("err", err))
 	}
 
@@ -51,5 +51,3 @@ func main() {
 	signal.Notify(s, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-s
 }
-
-

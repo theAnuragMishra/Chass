@@ -1,4 +1,4 @@
-package main
+package discordbot
 
 import (
 	"bytes"
@@ -7,7 +7,6 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
-	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -65,14 +64,7 @@ func renderBoard(pos *chess.Position, orientation int) ([]byte, error) {
 			if !ok {
 				continue
 			}
-			pw := pieceImg.Bounds().Dx()
-			ph := pieceImg.Bounds().Dy()
-			scale := float64(boardSquareSize) / float64(max(pw, ph))
-			w := int(math.Round(float64(pw) * scale))
-			h := int(math.Round(float64(ph) * scale))
-			offsetX := x + (boardSquareSize-w)/2
-			offsetY := y + (boardSquareSize-h)/2
-			dst := image.Rect(offsetX, offsetY, offsetX+w, offsetY+h)
+			dst := image.Rect(x, y, x+boardSquareSize, y+boardSquareSize)
 			draw.Draw(img, dst, pieceImg, image.Point{}, draw.Over)
 		}
 	}

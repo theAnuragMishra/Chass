@@ -1,4 +1,4 @@
-package main
+package discordbot
 
 import (
 	"bytes"
@@ -33,7 +33,7 @@ var (
 	games   = map[snowflake.ID]*gameState{}
 )
 
-func newGameState(playerID , channelID snowflake.ID, color string, think time.Duration) *gameState {
+func newGameState(playerID, channelID snowflake.ID, color string, think time.Duration) *gameState {
 	pos := chess.NewPosition()
 	eng := engine.NewEngine(pos, engine.NewTranspositionTable(64))
 	color = strings.ToLower(color)
@@ -51,7 +51,6 @@ func newGameState(playerID , channelID snowflake.ID, color string, think time.Du
 		orientation: humanColor,
 	}
 }
-
 
 func engineMove(state *gameState) error {
 	state.Mutex.Lock()
@@ -108,7 +107,6 @@ func returnGameState(event *events.ApplicationCommandInteractionCreate, state *g
 	replyGameState(event, state, content, attachment)
 }
 
-
 func sideToString(side int) string {
 	if side == chess.White {
 		return "White"
@@ -128,4 +126,3 @@ func gameStatus(state *gameState) (string, bool) {
 	}
 	return "", false
 }
-

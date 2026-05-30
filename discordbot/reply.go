@@ -1,4 +1,4 @@
-package main
+package discordbot
 
 import (
 	"log/slog"
@@ -37,7 +37,7 @@ func replyGameState(event *events.ApplicationCommandInteractionCreate, gameState
 		}
 		gameState.MessageID = m.ID
 	} else {
-		_, err := event.Client().Rest.UpdateMessage(gameState.ChannelID,  gameState.MessageID, discord.NewMessageUpdate().WithContent(msg).WithFiles(files...))
+		_, err := event.Client().Rest.UpdateMessage(gameState.ChannelID, gameState.MessageID, discord.NewMessageUpdate().WithContent(msg).WithFiles(files...))
 		if err != nil {
 			slog.Error(err.Error())
 			return

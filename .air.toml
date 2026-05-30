@@ -8,7 +8,7 @@ tmp_dir = "tmp"
 [build]
   args_bin = []
   bin = "./tmp/bot"
-  cmd = "go build -o ./tmp/bot ./discord-bot"
+  cmd = "go build -o ./tmp/bot ./cmd/discordbot"
   delay = 1000
   entrypoint = ["./tmp/bot"]
   exclude_dir = ["assets", "tmp", "vendor", "testdata", "python-client", "web-client"]

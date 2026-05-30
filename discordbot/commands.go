@@ -1,4 +1,4 @@
-package main
+package discordbot
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	"github.com/theAnuragMishra/chass/internal/chess"
 )
 
-var commands = []discord.ApplicationCommandCreate{
+var Commands = []discord.ApplicationCommandCreate{
 	discord.SlashCommandCreate{
 		Name:        "play",
 		Description: "Play chess against the engine",
@@ -58,7 +58,7 @@ var commands = []discord.ApplicationCommandCreate{
 	},
 }
 
-func commandListener(event *events.ApplicationCommandInteractionCreate) {
+func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 	data := event.SlashCommandInteractionData()
 	userID := event.User().ID
 	channelID := event.Channel().ID()
@@ -80,7 +80,6 @@ func commandListener(event *events.ApplicationCommandInteractionCreate) {
 		thread, err := event.Client().Rest.CreateThread(event.Channel().ID(), discord.GuildPublicThreadCreate{
 			Name: event.User().EffectiveName() + "'s Game",
 		})
-
 		if err != nil {
 			slog.Error(err.Error())
 			replySimple(event, "Error creating game thread", true)
