@@ -252,7 +252,7 @@ func tinyFont() map[rune][]string {
 
 func loadPiecesFromDisk() (map[chess.Piece]image.Image, error) {
 	root := projectRoot()
-	assetDir := filepath.Join(root, "assets")
+	assetDir := filepath.Join(root, "assets/mpchess")
 	lookup := map[chess.Piece]string{
 		chess.WhitePawn:   "wP.svg",
 		chess.WhiteKnight: "wN.svg",
