@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/srwiley/oksvg"
-	"github.com/srwiley/rasterx"
 	"github.com/theAnuragMishra/chass/internal/chess"
 )
 
@@ -254,23 +252,23 @@ func loadPiecesFromDisk() (map[chess.Piece]image.Image, error) {
 	root := projectRoot()
 	assetDir := filepath.Join(root, "assets/mpchess")
 	lookup := map[chess.Piece]string{
-		chess.WhitePawn:   "wP.svg",
-		chess.WhiteKnight: "wN.svg",
-		chess.WhiteBishop: "wB.svg",
-		chess.WhiteRook:   "wR.svg",
-		chess.WhiteQueen:  "wQ.svg",
-		chess.WhiteKing:   "wK.svg",
-		chess.BlackPawn:   "bP.svg",
-		chess.BlackKnight: "bN.svg",
-		chess.BlackBishop: "bB.svg",
-		chess.BlackRook:   "bR.svg",
-		chess.BlackQueen:  "bQ.svg",
-		chess.BlackKing:   "bK.svg",
+		chess.WhitePawn:   "wP.png",
+		chess.WhiteKnight: "wN.png",
+		chess.WhiteBishop: "wB.png",
+		chess.WhiteRook:   "wR.png",
+		chess.WhiteQueen:  "wQ.png",
+		chess.WhiteKing:   "wK.png",
+		chess.BlackPawn:   "bP.png",
+		chess.BlackKnight: "bN.png",
+		chess.BlackBishop: "bB.png",
+		chess.BlackRook:   "bR.png",
+		chess.BlackQueen:  "bQ.png",
+		chess.BlackKing:   "bK.png",
 	}
 	pieces := map[chess.Piece]image.Image{}
 	for piece, name := range lookup {
 		path := filepath.Join(assetDir, name)
-		img, err := decodePNGorSVG(path)
+		img, err := decodePNG(path)
 		if err != nil {
 			return nil, err
 		}
@@ -294,29 +292,17 @@ func MustInitPieceAssets() {
 	}
 }
 
-func decodePNGorSVG(path string) (image.Image, error) {
+func decodePNG(path string) (image.Image, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	if strings.HasSuffix(strings.ToLower(path), ".png") {
-		img, err := png.Decode(file)
-		if err != nil {
-			return nil, err
-		}
-		return img, nil
-	}
-	icon, err := oksvg.ReadIconStream(file)
+	img, err := png.Decode(file)
 	if err != nil {
 		return nil, err
 	}
-	icon.SetTarget(0, 0, float64(boardSquareSize), float64(boardSquareSize))
-	rgba := image.NewRGBA(image.Rect(0, 0, boardSquareSize, boardSquareSize))
-	scanner := rasterx.NewScannerGV(boardSquareSize, boardSquareSize, rgba, rgba.Bounds())
-	raster := rasterx.NewDasher(boardSquareSize, boardSquareSize, scanner)
-	icon.Draw(raster, 1.0)
-	return rgba, nil
+	return img, nil
 }
 
 func projectRoot() string {
