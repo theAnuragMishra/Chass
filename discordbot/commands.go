@@ -1,7 +1,9 @@
 package discordbot
 
 import (
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/disgoorg/disgo/discord"
@@ -33,6 +35,32 @@ var Commands = []discord.ApplicationCommandCreate{
 		},
 	},
 	discord.SlashCommandCreate{
+		Name:        "challenge",
+		Description: "Challenge another user to a chess game",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionUser{
+				Name:        "user",
+				Description: "Who you want to challenge",
+				Required:    true,
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "challenges",
+		Description: "List your pending incoming challenges",
+	},
+	discord.SlashCommandCreate{
+		Name:        "accept",
+		Description: "Accept a pending challenge",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionUser{
+				Name:        "challenger",
+				Description: "Challenge sender to accept",
+				Required:    true,
+			},
+		},
+	},
+	discord.SlashCommandCreate{
 		Name:        "move",
 		Description: "Play a move in your current game",
 		Options: []discord.ApplicationCommandOption{
@@ -49,7 +77,7 @@ var Commands = []discord.ApplicationCommandCreate{
 	},
 	discord.SlashCommandCreate{
 		Name:        "draw",
-		Description: "Offer a draw (engine will always accept)",
+		Description: "Offer or accept a draw",
 	},
 	discord.SlashCommandCreate{
 		Name:        "flip",
@@ -85,10 +113,10 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 			return
 		}
 
-		state := newGameState(userID, thread.ID(), color, time.Duration(thinkMs)*time.Millisecond)
+		state := newEngineGameState(userID, thread.ID(), color, time.Duration(thinkMs)*time.Millisecond)
 		setGame(thread.ID(), state)
 
-		if state.HumanColor == chess.Black {
+		if state.isEngineSide(state.Pos.SideToMove) {
 			if err := engineMove(state); err != nil {
 				_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent(err.Error()))
 				return
@@ -97,21 +125,102 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 
 		event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 		returnGameState(event, state, "Game started")
+	case "challenge":
+		target, ok := data.OptUser("user")
+		if !ok || target.ID == 0 {
+			replySimple(event, "Could not resolve challenged user", true)
+			return
+		}
+		if target.ID == userID {
+			replySimple(event, "You cannot challenge yourself", true)
+			return
+		}
+		if target.Bot {
+			replySimple(event, "Please use /play to challenge the engine", true)
+			return
+		}
+
+		challenge := pendingChallenge{
+			ChallengerID: userID,
+			ChallengedID: target.ID,
+			ChannelID:    channelID,
+			Challenger:   event.User().EffectiveName(),
+			Challenged:   target.EffectiveName(),
+			CreatedAt:    time.Now(),
+		}
+		if !addChallenge(challenge) {
+			replySimple(event, "You already have a pending challenge for that user", true)
+			return
+		}
+
+		replySimple(event,
+			fmt.Sprintf("%s challenged %s. Use `/accept` and select %s as challenger.", userMention(userID), userMention(target.ID), userMention(userID)),
+			false,
+		)
+	case "challenges":
+		items := listChallenges(userID)
+		if len(items) == 0 {
+			replySimple(event, "You have no pending challenges", true)
+			return
+		}
+
+		var builder strings.Builder
+		builder.WriteString("Pending challenges for you:\n")
+		maxItems := 20
+		for i, challenge := range items {
+			if i >= maxItems {
+				builder.WriteString(fmt.Sprintf("...and %d more\n", len(items)-maxItems))
+				break
+			}
+			builder.WriteString(fmt.Sprintf("%d. %s in <#%s>\n", i+1, userMention(challenge.ChallengerID), challenge.ChannelID))
+		}
+		builder.WriteString("Use `/accept` and select a challenger.")
+
+		replySimple(event, builder.String(), true)
+	case "accept":
+		challenger, ok := data.OptUser("challenger")
+		if !ok || challenger.ID == 0 {
+			replySimple(event, "Could not resolve challenger user", true)
+			return
+		}
+
+		challenge, ok := acceptChallenge(userID, challenger.ID)
+		if !ok {
+			replySimple(event, "No pending challenge from that user", true)
+			return
+		}
+
+		threadName := challenge.Challenger + " vs " + challenge.Challenged
+		thread, err := event.Client().Rest.CreateThread(challenge.ChannelID, discord.GuildPublicThreadCreate{Name: threadName})
+		if err != nil {
+			_ = addChallenge(challenge)
+			slog.Error(err.Error())
+			replySimple(event, "Error creating game thread :(", true)
+			return
+		}
+
+		state := newHumanGameState(challenge.ChallengerID, challenge.ChallengedID, thread.ID())
+		setGame(thread.ID(), state)
+
+		returnGameState(event, state, "Game started")
+		replySimple(event, fmt.Sprintf("Challenge accepted. Game thread: <#%s>", thread.ID()), true)
 	case "move":
 		state := getGame(channelID)
-		if state == nil || state.PlayerID != userID {
-			replySimple(event, "Trying to sneak in your move in someone else's game, huh?", true)
+		if state == nil {
+			replySimple(event, "No active game in this channel.", true)
 			return
 		}
 
 		state.Mutex.Lock()
-		if state.Pos.SideToMove != state.HumanColor {
+		playerSide, ok := state.playerSide(userID)
+
+		if !ok || state.Pos.SideToMove != playerSide {
 			state.Mutex.Unlock()
-			replySimple(event, "not your turn", true)
+			replySimple(event, "Trying to sneak in your move in someone else's game, huh?", true)
 			return
 		}
 
-		_ = event.DeferCreateMessage(false)
+		_ = event.DeferCreateMessage(true)
 		moveString := data.String("move")
 
 		move, ok := chess.ParseUCIMove(state.Pos, moveString)
@@ -128,6 +237,7 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 			_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent("Illegal move"))
 			return
 		}
+		state.DrawOfferedBy = 0
 		if msg, done := gameStatus(state); done {
 			state.Mutex.Unlock()
 			returnGameState(event, state, msg)
@@ -135,11 +245,13 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 			clearGame(channelID)
 			return
 		}
-		if err := engineMoveLocked(state); err != nil {
-			state.Mutex.Unlock()
-			slog.Error(err.Error())
-			_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent(err.Error()))
-			return
+		if state.isEngineSide(state.Pos.SideToMove) {
+			if err := engineMoveLocked(state); err != nil {
+				state.Mutex.Unlock()
+				slog.Error(err.Error())
+				_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent(err.Error()))
+				return
+			}
 		}
 		if msg, done := gameStatus(state); done {
 			state.Mutex.Unlock()
@@ -148,29 +260,87 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 			clearGame(channelID)
 			return
 		}
+		state.orientation = state.Pos.SideToMove
 		state.Mutex.Unlock()
-		returnGameState(event, state, "Your move")
+		returnGameState(event, state, "Move played")
 		event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 	case "resign":
 		state := getGame(channelID)
-		if state == nil || state.PlayerID != userID {
+		if state == nil {
 			replySimple(event, "No active game in this channel", true)
 			return
 		}
+
+		if !state.isParticipant(userID) {
+			replySimple(event, "Do that in your own game :clown:", true)
+			return
+		}
+
+		side, _ := state.playerSide(userID)
+		winnerSide := chess.White
+		if side == chess.White {
+			winnerSide = chess.Black
+		}
+		winner := userMention(state.playerIDForSide(winnerSide))
 		clearGame(channelID)
-		replySimple(event, "You resigned. Game over.", false)
+		replySimple(event, fmt.Sprintf("%s resigned. Winner: %s", userMention(userID), winner), false)
 	case "draw":
 		state := getGame(channelID)
-		if state == nil || state.PlayerID != userID {
+		if state == nil {
 			replySimple(event, "No active game in this channel", true)
 			return
 		}
-		clearGame(channelID)
-		replySimple(event, "Draw accepted. Game over.", false)
+
+		if !state.isParticipant(userID) {
+			replySimple(event, "Do that in your own game :clown:", true)
+			return
+		}
+
+		state.Mutex.Lock()
+		if !state.isHumanVsHuman() {
+			state.Mutex.Unlock()
+			clearGame(channelID)
+			replySimple(event, "Draw accepted. Game over.", false)
+			return
+		}
+
+		playerSide, _ := state.playerSide(userID)
+		opponentSide := chess.Black
+		if playerSide == chess.Black {
+			opponentSide = chess.White
+		}
+		opponentID := state.playerIDForSide(opponentSide)
+
+		switch state.DrawOfferedBy {
+		case 0:
+			state.DrawOfferedBy = userID
+			state.Mutex.Unlock()
+			replySimple(event,
+				fmt.Sprintf("%s offered a draw. %s can use /draw to accept before the next move.", userMention(userID), userMention(opponentID)),
+				false,
+			)
+		case userID:
+			state.Mutex.Unlock()
+			replySimple(event,
+				fmt.Sprintf("You already offered a draw. Waiting for %s to use /draw.", userMention(opponentID)),
+				true,
+			)
+		default:
+			offeredBy := state.DrawOfferedBy
+			state.DrawOfferedBy = 0
+			state.Mutex.Unlock()
+			clearGame(channelID)
+			replySimple(event, fmt.Sprintf("%s accepted %s's draw offer. Game over.", userMention(userID), userMention(offeredBy)), false)
+		}
 	case "flip":
 		state := getGame(channelID)
-		if state == nil || state.PlayerID != userID {
+		if state == nil {
 			replySimple(event, "No active game in this channel", true)
+			return
+		}
+
+		if !state.isParticipant(userID) {
+			replySimple(event, "Do that in your own game :clown:", true)
 			return
 		}
 		_ = event.DeferCreateMessage(true)

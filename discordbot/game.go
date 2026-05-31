@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -17,39 +18,101 @@ import (
 )
 
 type gameState struct {
-	Pos         *chess.Position
-	Engine      *engine.Engine
-	PlayerID    snowflake.ID
-	ChannelID   snowflake.ID
-	HumanColor  int
-	ThinkTime   time.Duration
-	Mutex       sync.Mutex
-	MessageID   snowflake.ID
-	orientation int
+	Pos           *chess.Position
+	Engine        *engine.Engine
+	WhitePlayerID snowflake.ID
+	BlackPlayerID snowflake.ID
+	ChannelID     snowflake.ID
+	ThinkTime     time.Duration
+	Mutex         sync.Mutex
+	MessageID     snowflake.ID
+	DrawOfferedBy snowflake.ID
+	orientation   int
 }
 
 var (
 	gamesMu sync.Mutex
 	games   = map[snowflake.ID]*gameState{}
+
+	challengesMu sync.Mutex
+	challenges   = map[snowflake.ID]map[snowflake.ID]pendingChallenge{}
 )
 
-func newGameState(playerID, channelID snowflake.ID, color string, think time.Duration) *gameState {
+type pendingChallenge struct {
+	ChallengerID snowflake.ID
+	ChallengedID snowflake.ID
+	ChannelID    snowflake.ID
+	Challenger   string
+	Challenged   string
+	CreatedAt    time.Time
+}
+
+func newEngineGameState(playerID, channelID snowflake.ID, color string, think time.Duration) *gameState {
 	pos := chess.NewPosition()
 	eng := engine.NewEngine(pos, engine.NewTranspositionTable(64))
 	color = strings.ToLower(color)
-	humanColor := chess.White
+
+	whitePlayerID := playerID
+	blackPlayerID := snowflake.ID(0)
+	orientation := chess.White
 	if color == "black" {
-		humanColor = chess.Black
+		whitePlayerID = 0
+		blackPlayerID = playerID
+		orientation = chess.Black
 	}
+
 	return &gameState{
-		Pos:         pos,
-		Engine:      eng,
-		PlayerID:    playerID,
-		ChannelID:   channelID,
-		HumanColor:  humanColor,
-		ThinkTime:   think,
-		orientation: humanColor,
+		Pos:           pos,
+		Engine:        eng,
+		WhitePlayerID: whitePlayerID,
+		BlackPlayerID: blackPlayerID,
+		ChannelID:     channelID,
+		ThinkTime:     think,
+		orientation:   orientation,
 	}
+}
+
+func newHumanGameState(whitePlayerID, blackPlayerID, channelID snowflake.ID) *gameState {
+	return &gameState{
+		Pos:           chess.NewPosition(),
+		WhitePlayerID: whitePlayerID,
+		BlackPlayerID: blackPlayerID,
+		ChannelID:     channelID,
+		orientation:   chess.White,
+	}
+}
+
+func (state *gameState) playerIDForSide(side int) snowflake.ID {
+	if side == chess.White {
+		return state.WhitePlayerID
+	}
+	return state.BlackPlayerID
+}
+
+func (state *gameState) playerSide(userID snowflake.ID) (int, bool) {
+	if state.WhitePlayerID == userID {
+		return chess.White, true
+	}
+	if state.BlackPlayerID == userID {
+		return chess.Black, true
+	}
+	return 0, false
+}
+
+func (state *gameState) isParticipant(userID snowflake.ID) bool {
+	_, ok := state.playerSide(userID)
+	return ok
+}
+
+func (state *gameState) isEngineSide(side int) bool {
+	if state.Engine == nil {
+		return false
+	}
+	return state.playerIDForSide(side) == 0
+}
+
+func (state *gameState) isHumanVsHuman() bool {
+	return !state.isEngineSide(chess.White) && !state.isEngineSide(chess.Black)
 }
 
 func engineMove(state *gameState) error {
@@ -59,7 +122,7 @@ func engineMove(state *gameState) error {
 }
 
 func engineMoveLocked(state *gameState) error {
-	if state.Pos.SideToMove == state.HumanColor {
+	if !state.isEngineSide(state.Pos.SideToMove) {
 		return nil
 	}
 	ctx := context.Background()
@@ -91,6 +154,74 @@ func clearGame(channelID snowflake.ID) {
 	delete(games, channelID)
 }
 
+func addChallenge(challenge pendingChallenge) bool {
+	challengesMu.Lock()
+	defer challengesMu.Unlock()
+
+	userChallenges, ok := challenges[challenge.ChallengedID]
+	if !ok {
+		userChallenges = map[snowflake.ID]pendingChallenge{}
+		challenges[challenge.ChallengedID] = userChallenges
+	}
+
+	if _, exists := userChallenges[challenge.ChallengerID]; exists {
+		return false
+	}
+
+	userChallenges[challenge.ChallengerID] = challenge
+	return true
+}
+
+func acceptChallenge(challengedID, challengerID snowflake.ID) (pendingChallenge, bool) {
+	challengesMu.Lock()
+	defer challengesMu.Unlock()
+
+	userChallenges, ok := challenges[challengedID]
+	if !ok {
+		return pendingChallenge{}, false
+	}
+
+	challenge, ok := userChallenges[challengerID]
+	if !ok {
+		return pendingChallenge{}, false
+	}
+
+	delete(userChallenges, challengerID)
+	if len(userChallenges) == 0 {
+		delete(challenges, challengedID)
+	}
+
+	return challenge, true
+}
+
+func listChallenges(challengedID snowflake.ID) []pendingChallenge {
+	challengesMu.Lock()
+	defer challengesMu.Unlock()
+
+	userChallenges, ok := challenges[challengedID]
+	if !ok || len(userChallenges) == 0 {
+		return nil
+	}
+
+	items := make([]pendingChallenge, 0, len(userChallenges))
+	for _, challenge := range userChallenges {
+		items = append(items, challenge)
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].CreatedAt.Before(items[j].CreatedAt)
+	})
+
+	return items
+}
+
+func userMention(userID snowflake.ID) string {
+	if userID == 0 {
+		return "Engine"
+	}
+	return "<@" + userID.String() + ">"
+}
+
 func returnGameState(event *events.ApplicationCommandInteractionCreate, state *gameState, title string) {
 	img, err := renderBoard(state.Pos, state.orientation)
 	if err != nil {
@@ -99,10 +230,12 @@ func returnGameState(event *events.ApplicationCommandInteractionCreate, state *g
 	}
 	attachment := discord.NewFile("board.png", "board.png", bytes.NewReader(img))
 	turnText := sideToString(state.Pos.SideToMove)
+	turnPlayer := userMention(state.playerIDForSide(state.Pos.SideToMove))
 	if title == "Checkmate" || strings.HasPrefix(title, "Draw") || title == "Stalemate" {
 		turnText = "-"
+		turnPlayer = "-"
 	}
-	content := fmt.Sprintf("%s. Turn: %s", title, turnText)
+	content := fmt.Sprintf("%s. Turn: %s (%s)", title, turnText, turnPlayer)
 
 	replyGameState(event, state, content, attachment)
 }
