@@ -1,7 +1,6 @@
 package discordbot
 
 import (
-	"errors"
 	"log/slog"
 	"time"
 
@@ -69,8 +68,8 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 			replySimple(event, "Already playing in this channel!", true)
 			return
 		}
-		_ = event.DeferCreateMessage(false)
-		defer event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
+
+		replySimple(event, "Creating game...", false)
 
 		color := data.String("color")
 		thinkMs := data.Int("think_ms")
@@ -82,7 +81,7 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 		})
 		if err != nil {
 			slog.Error(err.Error())
-			replySimple(event, "Error creating game thread", true)
+			_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent("Error creating game thread :("))
 			return
 		}
 
@@ -91,10 +90,12 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 
 		if state.HumanColor == chess.Black {
 			if err := engineMove(state); err != nil {
-				replyError(event, err)
+				_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent(err.Error()))
 				return
 			}
 		}
+
+		event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 		returnGameState(event, state, "Game started")
 	case "move":
 		state := getGame(channelID)
@@ -119,39 +120,41 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 		}
 		if !ok {
 			state.Mutex.Unlock()
-			followupError(event, errors.New("invalid move (use UCI or SAN)"))
+			_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent("Error: invalid move (use UCI or SAN)"))
 			return
 		}
 		if _, ok := state.Pos.MakeMove(move); !ok {
 			state.Mutex.Unlock()
-			followupError(event, errors.New("illegal move"))
+			_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent("Illegal move"))
 			return
 		}
-		defer event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 		if msg, done := gameStatus(state); done {
 			state.Mutex.Unlock()
 			returnGameState(event, state, msg)
+			event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 			clearGame(channelID)
 			return
 		}
 		if err := engineMoveLocked(state); err != nil {
 			state.Mutex.Unlock()
 			slog.Error(err.Error())
-			replyError(event, err)
+			_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent(err.Error()))
 			return
 		}
 		if msg, done := gameStatus(state); done {
 			state.Mutex.Unlock()
 			returnGameState(event, state, msg)
+			event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 			clearGame(channelID)
 			return
 		}
 		state.Mutex.Unlock()
 		returnGameState(event, state, "Your move")
+		event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 	case "resign":
 		state := getGame(channelID)
 		if state == nil || state.PlayerID != userID {
-			replyError(event, errors.New("no active game in this channel"))
+			replySimple(event, "No active game in this channel", true)
 			return
 		}
 		clearGame(channelID)
@@ -159,22 +162,22 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 	case "draw":
 		state := getGame(channelID)
 		if state == nil || state.PlayerID != userID {
-			replyError(event, errors.New("no active game in this channel"))
+			replySimple(event, "No active game in this channel", true)
 			return
 		}
 		clearGame(channelID)
 		replySimple(event, "Draw accepted. Game over.", false)
 	case "flip":
-		_ = event.DeferCreateMessage(false)
-		defer event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 		state := getGame(channelID)
 		if state == nil || state.PlayerID != userID {
-			replyError(event, errors.New("no active game in this channel"))
+			replySimple(event, "No active game in this channel", true)
 			return
 		}
+		_ = event.DeferCreateMessage(true)
 		state.Mutex.Lock()
 		state.orientation ^= 1
 		state.Mutex.Unlock()
+		event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
 		returnGameState(event, state, "Your move")
 	}
 }

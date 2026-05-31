@@ -94,7 +94,7 @@ func clearGame(channelID snowflake.ID) {
 func returnGameState(event *events.ApplicationCommandInteractionCreate, state *gameState, title string) {
 	img, err := renderBoard(state.Pos, state.orientation)
 	if err != nil {
-		replyError(event, err)
+		_, _ = event.Client().Rest.CreateMessage(state.ChannelID, discord.NewMessageCreate().WithContent("Error rendering board"))
 		return
 	}
 	attachment := discord.NewFile("board.png", "board.png", bytes.NewReader(img))
