@@ -1,6 +1,7 @@
 package discordbot
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -67,6 +68,21 @@ var Commands = []discord.ApplicationCommandCreate{
 			discord.ApplicationCommandOptionString{
 				Name:        "move",
 				Description: "Move in UCI/SAN notation (e2e4, g7g8q)",
+				Required:    true,
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "view",
+		Description: "View the current board",
+	},
+	discord.SlashCommandCreate{
+		Name:        "position",
+		Description: "Preview a position after SAN/UCI moves",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionString{
+				Name:        "moves",
+				Description: "Space-separated SAN/UCI moves",
 				Required:    true,
 			},
 		},
@@ -264,6 +280,55 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 		state.Mutex.Unlock()
 		returnGameState(event, state, "Move played")
 		event.Client().Rest.DeleteInteractionResponse(event.ApplicationID(), event.Token())
+	case "view":
+		state := getGame(channelID)
+		if state == nil {
+			replySimple(event, "No active game in this channel", true)
+			return
+		}
+
+		state.Mutex.Lock()
+		img, err := renderBoard(state.Pos, state.orientation)
+		if err != nil {
+			state.Mutex.Unlock()
+			replySimple(event, "Error rendering board", true)
+			return
+		}
+		turnText := sideToString(state.Pos.SideToMove)
+		turnPlayer := userMention(state.playerIDForSide(state.Pos.SideToMove))
+		state.Mutex.Unlock()
+
+		attachment := discord.NewFile("board.png", "board.png", bytes.NewReader(img))
+		replySimple(event, fmt.Sprintf("Current position. Turn: %s (%s)", turnText, turnPlayer), true, attachment)
+	case "position":
+		movesString := strings.TrimSpace(data.String("moves"))
+		pos := chess.NewPosition()
+		tokens := strings.Fields(movesString)
+
+		for i, token := range tokens {
+			move, ok := chess.ParseUCIMove(pos, token)
+			if !ok {
+				move, ok = chess.ParseSANMove(pos, token)
+			}
+			if !ok {
+				replySimple(event, fmt.Sprintf("Invalid move at #%d: `%s`", i+1, token), true)
+				return
+			}
+			if _, ok := pos.MakeMove(move); !ok {
+				replySimple(event, fmt.Sprintf("Illegal move at #%d: `%s`", i+1, token), true)
+				return
+			}
+		}
+
+		img, err := renderBoard(pos, chess.White)
+		if err != nil {
+			replySimple(event, "Error rendering board", true)
+			return
+		}
+
+		attachment := discord.NewFile("board.png", "board.png", bytes.NewReader(img))
+		title := fmt.Sprintf("Position after %d move(s). Turn: %s", len(tokens), sideToString(pos.SideToMove))
+		replySimple(event, title, true, attachment)
 	case "resign":
 		state := getGame(channelID)
 		if state == nil {
