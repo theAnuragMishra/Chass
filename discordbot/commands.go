@@ -230,9 +230,14 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 		state.Mutex.Lock()
 		playerSide, ok := state.playerSide(userID)
 
-		if !ok || state.Pos.SideToMove != playerSide {
+		if !ok {
 			state.Mutex.Unlock()
 			replySimple(event, "Trying to sneak in your move in someone else's game, huh?", true)
+			return
+		}
+
+		if state.Pos.SideToMove != playerSide {
+			replySimple(event, "Not your turn.", true)
 			return
 		}
 
@@ -248,12 +253,18 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 			_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent("Error: invalid move (use UCI or SAN)"))
 			return
 		}
+
+		moveStr := buildMoveString(state, move)
+
 		if _, ok := state.Pos.MakeMove(move); !ok {
 			state.Mutex.Unlock()
 			_, _ = event.Client().Rest.UpdateInteractionResponse(event.ApplicationID(), event.Token(), discord.NewMessageUpdate().WithContent("Illegal move"))
 			return
 		}
+
+		state.MoveHistory = append(state.MoveHistory, moveStr)
 		state.DrawOfferedBy = 0
+
 		if msg, done := gameStatus(state); done {
 			state.Mutex.Unlock()
 			returnGameState(event, state, msg)
@@ -269,6 +280,7 @@ func CommandListener(event *events.ApplicationCommandInteractionCreate) {
 				return
 			}
 		}
+
 		if msg, done := gameStatus(state); done {
 			state.Mutex.Unlock()
 			returnGameState(event, state, msg)

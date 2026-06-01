@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type gameState struct {
 	MessageID     snowflake.ID
 	DrawOfferedBy snowflake.ID
 	orientation   int
+	MoveHistory   []string
 }
 
 var (
@@ -130,9 +132,15 @@ func engineMoveLocked(state *gameState) error {
 	if move == chess.NoMove {
 		return errors.New("engine has no legal moves")
 	}
+
+	moveString := buildMoveString(state, move)
+
 	if _, ok := state.Pos.MakeMove(move); !ok {
 		return errors.New("engine produced illegal move: " + move.UCI())
 	}
+
+	state.MoveHistory = append(state.MoveHistory, moveString)
+
 	return nil
 }
 
@@ -235,7 +243,8 @@ func returnGameState(event *events.ApplicationCommandInteractionCreate, state *g
 		turnText = "-"
 		turnPlayer = "-"
 	}
-	content := fmt.Sprintf("%s. Turn: %s (%s)", title, turnText, turnPlayer)
+	content := fmt.Sprintf(`%s. Turn: %s (%s)
+%s`, title, turnText, turnPlayer, strings.Join(state.MoveHistory, " "))
 
 	replyGameState(event, state, content, attachment)
 }
@@ -258,4 +267,16 @@ func gameStatus(state *gameState) (string, bool) {
 		return "Stalemate", true
 	}
 	return "", false
+}
+
+func buildMoveString(state *gameState, move chess.Move) string {
+	var moveString string
+	if len(state.MoveHistory)%2 == 0 {
+		moveNum := len(state.MoveHistory)/2 + 1
+		moveString += strconv.Itoa(moveNum) + ". "
+	}
+	san, _ := chess.MoveToSAN(state.Pos, move)
+	moveString += san
+
+	return moveString
 }

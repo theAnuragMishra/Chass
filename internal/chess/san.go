@@ -9,7 +9,7 @@ func ParseSANMove(pos *Position, san string) (Move, bool) {
 	}
 	moves := pos.GenerateMoves().Moves
 	for _, m := range moves {
-		sanMove, ok := moveToSAN(pos, m)
+		sanMove, ok := MoveToSAN(pos, m)
 		if !ok {
 			continue
 		}
@@ -20,7 +20,7 @@ func ParseSANMove(pos *Position, san string) (Move, bool) {
 	return NoMove, false
 }
 
-func moveToSAN(pos *Position, m Move) (string, bool) {
+func MoveToSAN(pos *Position, m Move) (string, bool) {
 	from := m.From()
 	to := m.To()
 	piece := pos.pieceAt(from)
